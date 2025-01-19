@@ -1,0 +1,2 @@
+ELASTICSEARCH_URL = "http://144.122.71.171:8083"
+FILES_INDEX = "files-index"
