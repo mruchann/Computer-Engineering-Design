@@ -9,43 +9,23 @@ in server these are running:
 * 8084 -> kibana
 * 80   -> server
 
+## Notes for frontend:
+
+1. Run `npm install` in the `client` directory.
+2. Run `npm run dev` in the `client` directory to start the application.
+3. `client/renderer/components/AuthGuard.tsx`, `client/renderer/store/useAuthStore.ts`, and `client/renderer/store/useStore.ts` are related to authentication. If page redirection is not happening due to authentication, change these files.
+4. `client/main/config.ts` and `client/renderer/constants/api.ts` store API endpoint constants. If you want to test your local changes, change the constants to point to the local server, otherwise point them to the server running on `144.122.71.171`.
+
+## Notes for backend:
+
+1. Run `pip install -r requirements.txt` in the `service` directory.
+2. Run `python manage.py runserver 8000` in the `service` directory to start the server. 8000 is for the port being used.
+
+
 Example search query to server in Postman:
 ```bash
-GET http://144.122.71.171/search/?query=CENG382
+GET http://144.122.71.171/api/search/?query=CENG382
 ```
-
-## Client
-
-Node modules management:
-
-First, install distutils:
-```bash
-brew install python-setuptools
-```
-
-and when you need to `npm install` a new module which will be used in Electron side `cd` into `client/release/app` and install it there.
-when you need to install a module that will be used in the React side `cd`` into `client` and install it there.
-
-
-Install libextractor
-```bash
-brew install libextractor
-```
-
-to install these packages on Ubuntu, do `sudo apt install python3-distutils` and `sudo apt install libextractor-dev`
-
-Install dependencies
-```bash
-    npm install
-```
-
-Run client
-```bash
-    npm start
-```
-
-This will open an electron  interface. Make sure you're connected to METU VPN (for now).
-
 
 ## Service
 
@@ -67,11 +47,6 @@ You may want to use the following command to install requirements for python pac
 For quitting
 ```bash
     deactivate
-```
-
-### Running Django app
-```bash
-    python3 manage.py runserver
 ```
 
 ### Migrations For DB
@@ -104,4 +79,10 @@ python manage.py shell
 <QuerySet [<Group: Developers>]>
 >>> group1.members.all()
 <QuerySet [<User: username email>]>
+```
+
+### To run backend locally on MAC:
+
+```
+brew install postgresql
 ```

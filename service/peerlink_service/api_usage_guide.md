@@ -61,7 +61,7 @@ List all torrents
         {
             "id": "uuid",
             "name": "ceng_111_cikmislar.pdf",
-            "magnet_link": "magnet:?xt=urn:btih:12345",
+            "magnetLink": "magnet:?xt=urn:btih:12345",
             "uploaded_by": "john_doe",
             "uploaded_at": "2024-11-20T12:00:00Z"
         }
@@ -83,7 +83,7 @@ Search torrents by name
         {
             "id": "uuid",
             "name": "ceng_111_cikmislar.pdf",
-            "magnet_link": "magnet:?xt=urn:btih:12345",
+            "magnetLink": "magnet:?xt=urn:btih:12345",
             "uploaded_by": "john_doe",
             "uploaded_at": "2024-11-20T12:00:00Z"
         }
@@ -97,7 +97,7 @@ Add a new torrent
     ```json
     {
         "name": "ceng_111_cikmislar.pdf",
-        "magnet_link": "magnet:?xt=urn:btih:12345",
+        "magnetLink": "magnet:?xt=urn:btih:12345",
         "uploaded_by": "uuid"
     }
     ```
@@ -106,7 +106,7 @@ Add a new torrent
     {
         "id": "uuid",
         "name": "ceng_111_cikmislar.pdf",
-        "magnet_link": "magnet:?xt=urn:btih:12345",
+        "magnetLink": "magnet:?xt=urn:btih:12345",
         "uploaded_by": "john_doe",
         "uploaded_at": "2024-11-20T12:00:00Z"
     }
@@ -175,7 +175,7 @@ Endpoints return HTTP status codes for error:
     ```bash
     curl -X POST http://127.0.0.1:8000/torrents/ \
     -H "Content-Type: application/json" \
-    -d '{"name": "ceng_111_cikmislar.pdf", "magnet_link": "magnet:?xt=urn:btih:12345", "uploaded_by": "user_uuid"}'
+    -d '{"name": "ceng_111_cikmislar.pdf", "magnetLink": "magnet:?xt=urn:btih:12345", "uploaded_by": "user_uuid"}'
     ```
 
 - Add a Download

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h1>Report Details</h1>
+        </div>
+        <div class="col text-end">
+            <a href="{% url 'report_admin' %}" class="btn btn-secondary">Back to List</a>
+            <a href="{% url 'report_update' report.id %}" class="btn btn-primary">Edit Report</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5 class="card-title">Report Information</h5>
+                    <table class="table">
+                        <tr>
+                            <th>ID:</th>
+                            <td>{{ report.id }}</td>
+                        </tr>
+                        <tr>
+                            <th>Status:</th>
+                            <td>
+                                <span class="badge {% if report.status == 'PENDING' %}bg-warning{% elif report.status == 'APPROVED' %}bg-success{% else %}bg-danger{% endif %}">
+                                    {{ report.get_status_display }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Created At:</th>
+                            <td>{{ report.created_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                        <tr>
+                            <th>Last Updated:</th>
+                            <td>{{ report.updated_at|date:"Y-m-d H:i" }}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h5 class="card-title">File Information</h5>
+                    <table class="table">
+                        <tr>
+                            <th>File Name:</th>
+                            <td>{{ report.file.file_name }}</td>
+                        </tr>
+                        <tr>
+                            <th>File Hash:</th>
+                            <td>
+                                <code class="text-break" title="{{ report.file.file_hash }}">
+                                    {{ report.file.file_hash|truncatechars:30 }}
+                                </code>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Magnet Link:</th>
+                            <td>
+                                <code class="text-break" title="{{ report.file.magnetLink }}">
+                                    {{ report.file.magnetLink|truncatechars:30 }}
+                                </code>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <h5 class="card-title">Reporter Information</h5>
+                    <table class="table">
+                        <tr>
+                            <th>Username:</th>
+                            <td>{{ report.reporter.username }}</td>
+                        </tr>
+                        <tr>
+                            <th>Email:</th>
+                            <td>{{ report.reporter.email }}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <h5 class="card-title">Report Details</h5>
+                    <table class="table">
+                        <tr>
+                            <th>Reason:</th>
+                            <td>{{ report.reason }}</td>
+                        </tr>
+                        <tr>
+                            <th>Admin Notes:</th>
+                            <td>{{ report.admin_notes|default:"-" }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

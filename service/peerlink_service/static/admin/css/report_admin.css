@@ -1,0 +1,65 @@
+/* Report Admin Styles */
+.button {
+    display: inline-block;
+    padding: 5px 10px;
+    background-color: #417690;
+    color: white;
+    text-decoration: none;
+    border-radius: 3px;
+    font-size: 12px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.button:hover {
+    background-color: #295270;
+}
+
+#changelist-form .actions {
+    padding: 10px;
+    background: #f8f8f8;
+    border: 1px solid #eee;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+#changelist-form .actions select {
+    margin-right: 10px;
+}
+
+#changelist-form .actions button {
+    margin-right: 10px;
+}
+
+/* Status colors */
+.status-pending {
+    color: #ff9800;
+}
+
+.status-approved {
+    color: #4caf50;
+}
+
+.status-rejected {
+    color: #f44336;
+}
+
+/* Admin notes preview */
+.admin-notes-preview {
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Responsive table */
+@media screen and (max-width: 1024px) {
+    .field-file_link,
+    .field-reporter_link,
+    .field-admin_notes_preview {
+        max-width: 150px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+} 

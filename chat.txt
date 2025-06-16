@@ -1,0 +1,1238 @@
+commit 8872ee5eaa278ba516c08dfc8ce1752fe2429652
+Author: Mehmet Rüçhan Yavuzdemir <ruchan.yavuzdemir@icloud.com>
+Date:   Sat May 3 17:31:22 2025 +0300
+
+    SPRINT-9: Implement sort-by feature for browse page
+
+diff --git a/client/renderer/pages/browse.tsx b/client/renderer/pages/browse.tsx
+index 2e957c5..5dbadf7 100644
+--- a/client/renderer/pages/browse.tsx
++++ b/client/renderer/pages/browse.tsx
+@@ -27,6 +27,10 @@ import {
+   Button,
+   DialogActions,
+   Dialog,
++  FormControl,
++  InputLabel,
++  Select,
++  MenuItem,
+ } from '@mui/material';
+ import {
+   FileDownload as FileDownloadIcon,
+@@ -70,6 +74,25 @@ interface SearchSuggestion {
+   value: string;
+ }
+ 
++// Define sort options for the sort feature
++interface SortOption {
++  value: string;
++  label: string;
++}
++
++const sortOptions: SortOption[] = [
++  { value: 'filename_asc', label: 'Filename (A-Z)' },
++  { value: 'filename_desc', label: 'Filename (Z-A)' },
++  { value: 'size_asc', label: 'Size (Smallest first)' },
++  { value: 'size_desc', label: 'Size (Largest first)' },
++  { value: 'timestamp_desc', label: 'Upload Date (Newest first)' },
++  { value: 'timestamp_asc', label: 'Upload Date (Oldest first)' },
++  { value: 'owner_username_asc', label: 'Owner (A-Z)' },
++  { value: 'owner_username_desc', label: 'Owner (Z-A)' },
++  { value: 'rating_desc', label: 'Rating (Highest first)' },
++  { value: 'rating_asc', label: 'Rating (Lowest first)' },
++];
++
+ const searchFilters: SearchFilter[] = [
+   { type: 'filename', label: 'Filename' },
+   { type: 'owner_username', label: 'Owner' },
+@@ -333,6 +356,10 @@ export default function BrowsePage() {
+   const [loadingComments, setLoadingComments] = useState(false);
+   const [errorFetchingComments, setErrorFetchingComments] = useState('');
+   const [activeTab, setActiveTab] = useState('description');
++  // Add sorting state
++  const [sortBy, setSortBy] = useState<string>('timestamp_desc');
++  // Add ratings state
++  const [fileRatings, setFileRatings] = useState<Record<string, number>>({});
+ 
+   useEffect(() => {
+     if (dialogOpen && dialogContent) {
+@@ -423,6 +450,27 @@ export default function BrowsePage() {
+     }
+   };
+ 
++  // Fetch ratings for files
++  const fetchFileRatings = async (files: File[]) => {
++    const ratings: Record<string, number> = {};
++    try {
++      await Promise.all(
++        files.map(async (file) => {
++          if (file.hash) {
++            const response = await api.fetch(`${API_ENDPOINTS.RATING_AVERAGE}${file.hash}`);
++            if (response.ok) {
++              const data = await response.json();
++              ratings[file.hash] = data.average || 0;
++            }
++          }
++        })
++      );
++      setFileRatings(ratings);
++    } catch (error) {
++      console.error('Error fetching file ratings:', error);
++    }
++  };
++  
+   const searchFiles = async (query: string, groupId: string, filter: string) => {
+     setLoading(true);
+     try {
+@@ -448,6 +496,7 @@ export default function BrowsePage() {
+       const uniqueFileArray = Array.from(uniqueFiles.values());
+       setFiles(uniqueFileArray);
+       fetchSharerCounts(uniqueFileArray);
++      fetchFileRatings(uniqueFileArray);
+     } catch (error) {
+       console.error('Error searching files:', error);
+     } finally {
+@@ -515,11 +564,51 @@ export default function BrowsePage() {
+     return `${Math.round(bytes / Math.pow(1024, i))} ${sizes[i]}`;
+   };
+ 
+-  // Calculate pagination
++  // Add handleSortChange function for sorting
++  const handleSortChange = (event: SelectChangeEvent) => {
++    setSortBy(event.target.value);
++  };
++
++  // Add sortFiles function to sort the files based on selected sort option
++  const sortFiles = (filesToSort: File[]) => {
++    const [field, direction] = sortBy.split('_');
++    
++    return [...filesToSort].sort((a, b) => {
++      let comparison = 0;
++      
++      switch (field) {
++        case 'filename':
++          comparison = a.filename.localeCompare(b.filename);
++          break;
++        case 'size':
++          comparison = a.size - b.size;
++          break;
++        case 'timestamp':
++          comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
++          break;
++        case 'owner_username':
++          comparison = a.owner_username.localeCompare(b.owner_username);
++          break;
++        case 'rating':
++          // Use the fileRatings state to sort by rating
++          const ratingA = fileRatings[a.hash] || 0;
++          const ratingB = fileRatings[b.hash] || 0;
++          comparison = ratingA - ratingB;
++          break;
++        default:
++          comparison = 0;
++      }
++      
++      return direction === 'asc' ? comparison : -comparison;
++    });
++  };
++
++  // Calculate pagination with sorted results
+   const totalPages = Math.ceil(files.length / itemsPerPage);
+   const startIndex = (page - 1) * itemsPerPage;
+   const endIndex = startIndex + itemsPerPage;
+-  const currentPageResults = files.slice(startIndex, endIndex);
++  const sortedFiles = sortFiles(files);
++  const currentPageResults = sortedFiles.slice(startIndex, endIndex);
+ 
+   // Add handlePageChange function
+   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+@@ -553,9 +642,11 @@ export default function BrowsePage() {
+     setSnackbarMessage(`Download started: ${fileName}`);
+     setOpenSnackbar(true);
+     
+-    // Fix the electron API call
+-    if (window.electron && window.electron.leechFile) {
+-      window.electron.leechFile(magnetLink);
++    // Fix the electron API call - leechFile is exposed directly, not on ipcRenderer
++    // Use type assertion to match the type defined in global.d.ts
++    const electron = window.electron as typeof window.electron & { leechFile: (magnetLink: string) => void };
++    if (electron && electron.leechFile) {
++      electron.leechFile(magnetLink);
+     } else {
+       console.error('Electron API not available');
+     }
+@@ -613,91 +704,79 @@ export default function BrowsePage() {
+                   )}
+                 />
+               </Grid>
+-              
+-              <Grid item xs={12} md={3}>
+-                <Autocomplete
+-                  options={searchFilters}
+-                  getOptionLabel={(option) => option.label}
+-                  renderInput={(params) => (
+-                    <TextField
+-                      {...params}
+-                      label="Search By"
+-                      placeholder="Type to find attributes..."
+-                    />
+-                  )}
+-                  value={searchFilters.find(filter => filter.type === selectedFilter) || null}
+-                  onChange={(event, newValue) => {
+-                    if (newValue) {
+-                      setSelectedFilter(newValue.type);
+-                    }
+-                  }}
+-                  isOptionEqualToValue={(option, value) => option.type === value.type}
+-                />
+-              </Grid>
+-
+-              <Grid item xs={12} md={6}>
++              <Grid item xs={12} md={5}>
+                 <Autocomplete
+                   freeSolo
++                  fullWidth
+                   options={suggestions}
+                   inputValue={inputValue}
+                   onInputChange={(event, newInputValue) => {
+                     setInputValue(newInputValue);
+-                    setSearchQuery(newInputValue);
+                     debouncedFetchSuggestions(newInputValue);
+                   }}
+-                  onChange={(event, newValue) => {
+-                    if (typeof newValue === 'string') {
+-                      setSearchQuery(newValue);
+-                    } else if (newValue && 'value' in newValue) {
+-                      setSearchQuery(newValue.value);
+-                    }
++                  onChange={(event, newValue: string | SearchSuggestion | null) => {
++                    const value = typeof newValue === 'string' ? newValue : newValue?.value || '';
++                    setSearchQuery(value);
+                   }}
+                   renderInput={(params) => (
+                     <TextField
+                       {...params}
+-                      fullWidth
+-                      placeholder={`Search by ${selectedFilter}...`}
+-                      variant="outlined"
++                      label="Search"
++                      placeholder="Search for files..."
+                       InputProps={{
+                         ...params.InputProps,
+                         startAdornment: (
+-                          <InputAdornment position="start">
+-                            <SearchIcon />
+-                          </InputAdornment>
+-                        ),
++                          <>
++                            <InputAdornment position="start">
++                              <SearchIcon />
++                            </InputAdornment>
++                            {params.InputProps.startAdornment}
++                          </>
++                        )
+                       }}
+                     />
+                   )}
+-                  renderOption={(props, option, state) => (
+-                    <Box
+-                      component="li"
+-                      {...props}
+-                      key={option.value}
+-                      sx={{
+-                        '&.MuiAutocomplete-option': {
+-                          display: 'flex',
+-                          alignItems: 'center',
+-                          padding: '8px 16px',
+-                          '&:hover': {
+-                            backgroundColor: theme.palette.action.hover,
+-                          },
+-                        },
+-                      }}
+-                    >
+-                      <SearchIcon 
+-                        key={`search-icon-${option.value}`}
+-                        sx={{ mr: 1, color: 'text.secondary', fontSize: '0.875rem' }} 
+-                      />
+-                      <Typography 
+-                        key={`text-${option.value}`}
+-                        component="span"
+-                      >
+-                        {option.label}
+-                      </Typography>
+-                    </Box>
++                />
++              </Grid>
++              <Grid item xs={12} md={2}>
++                <Autocomplete
++                  fullWidth
++                  disableClearable
++                  options={searchFilters}
++                  getOptionLabel={(option) => option.label}
++                  value={searchFilters.find(filter => filter.type === selectedFilter) || searchFilters[0]}
++                  onChange={(event, newValue) => {
++                    if (newValue) {
++                      setSelectedFilter(newValue.type);
++                    }
++                  }}
++                  renderInput={(params) => (
++                    <TextField
++                      {...params}
++                      label="Filter Type"
++                      placeholder="Choose filter type..."
++                    />
+                   )}
+                 />
+               </Grid>
++              <Grid item xs={12} md={2}>
++                <FormControl fullWidth>
++                  <InputLabel id="sort-by-label">Sort By</InputLabel>
++                  <Select
++                    labelId="sort-by-label"
++                    id="sort-by-select"
++                    value={sortBy}
++                    label="Sort By"
++                    onChange={handleSortChange}
++                  >
++                    {sortOptions.map((option) => (
++                      <MenuItem key={option.value} value={option.value}>
++                        {option.label}
++                      </MenuItem>
++                    ))}
++                  </Select>
++                </FormControl>
++              </Grid>
+             </Grid>
+           </Paper>
+ 
+@@ -746,7 +825,7 @@ export default function BrowsePage() {
+                         </Box>
+ 
+                         <Box sx={{ mb: 2 }}>
+-                          <FileRating fileHash={file.hash} />
++                          <FileRating fileHash={file.hash} size="small" readOnly />
+                         </Box>
+ 
+                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+@@ -873,7 +952,7 @@ export default function BrowsePage() {
+                       Rate this file
+                     </Typography>
+                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
+-                      <FileRating fileHash={dialogContent.hash} size="large" />
++                      <FileRating fileHash={dialogContent.hash} size="large" readOnly={false} />
+                     </Box>
+                   </Box>
+ 
+commit 1314a4d95812ce57f2886dcdda3c91c37c07d342
+Author: Mehmet Rüçhan Yavuzdemir <ruchan.yavuzdemir@icloud.com>
+Date:   Sat May 3 17:31:49 2025 +0300
+
+    SPRINT-9: Implement sort-by feature for dashboard page
+
+diff --git a/client/renderer/pages/dashboard.tsx b/client/renderer/pages/dashboard.tsx
+index 63190b0..9222181 100644
+--- a/client/renderer/pages/dashboard.tsx
++++ b/client/renderer/pages/dashboard.tsx
+@@ -28,6 +28,11 @@ import {
+   DialogActions,
+   ToggleButtonGroup,
+   ToggleButton,
++  FormControl,
++  InputLabel,
++  Select,
++  MenuItem,
++  SelectChangeEvent,
+ } from '@mui/material';
+ import { useRouter } from 'next/router';
+ import SearchIcon from '@mui/icons-material/Search';
+@@ -59,6 +64,23 @@ interface SearchSuggestion {
+   value: string;
+ }
+ 
++// Define sort options
++interface SortOption {
++  value: string;
++  label: string;
++}
++
++const sortOptions: SortOption[] = [
++  { value: 'filename_asc', label: 'Filename (A-Z)' },
++  { value: 'filename_desc', label: 'Filename (Z-A)' },
++  { value: 'timestamp_desc', label: 'Upload Date (Newest first)' },
++  { value: 'timestamp_asc', label: 'Upload Date (Oldest first)' },
++  { value: 'owner_username_asc', label: 'Owner (A-Z)' },
++  { value: 'owner_username_desc', label: 'Owner (Z-A)' },
++  { value: 'rating_desc', label: 'Rating (Highest first)' },
++  { value: 'rating_asc', label: 'Rating (Lowest first)' },
++];
++
+ export default function DashboardPage() {
+   const { isAuthenticated, isInitialized } = useAuthStore();
+   const router = useRouter();
+@@ -90,6 +112,10 @@ export default function DashboardPage() {
+   const [loadingComments, setLoadingComments] = useState(false);
+   const [errorFetchingComments, setErrorFetchingComments] = useState('');
+   const [activeTab, setActiveTab] = useState('description');
++  // Add sorting state
++  const [sortBy, setSortBy] = useState<string>('timestamp_desc');
++  // Add ratings state
++  const [fileRatings, setFileRatings] = useState<Record<string, number>>({});
+ 
+   useEffect(() => {
+     if (dialogOpen && dialogContent) {
+@@ -161,6 +187,7 @@ export default function DashboardPage() {
+         const uniqueResults: SearchResult[] = Array.from(uniqueFiles.values());
+         setResults(uniqueResults);
+         fetchSharerCounts(uniqueResults);
++        fetchFileRatings(uniqueResults);
+       } else {
+         throw new Error('Search failed');
+       }
+@@ -216,6 +243,26 @@ export default function DashboardPage() {
+     setPage(value);
+   };
+ 
++  const fetchFileRatings = async (files: SearchResult[]) => {
++    const ratings: Record<string, number> = {};
++    try {
++      await Promise.all(
++        files.map(async (file) => {
++          if (file.hash) {
++            const response = await api.fetch(`${API_ENDPOINTS.RATING_AVERAGE}${file.hash}`);
++            if (response.ok) {
++              const data = await response.json();
++              ratings[file.hash] = data.average || 0;
++            }
++          }
++        })
++      );
++      setFileRatings(ratings);
++    } catch (error) {
++      console.error('Error fetching file ratings:', error);
++    }
++  };
++
+   const fetchInitialSearchResults = async () => {
+     setLoading(true);
+     try {
+@@ -226,6 +273,7 @@ export default function DashboardPage() {
+         const uniqueResultsArray = Array.from(uniqueFiles.values());
+         setAllResults(uniqueResultsArray);
+         fetchSharerCounts(uniqueResultsArray, true);
++        fetchFileRatings(uniqueResultsArray);
+       }
+     } catch (error) {
+       console.error('Failed to fetch initial search results:', error);
+@@ -277,8 +325,10 @@ export default function DashboardPage() {
+     setSnackbarMessage(`Download started: ${fileName}`);
+     setOpenSnackbar(true);
+     
+-    if (window.electron && window.electron.leechFile) {
+-      window.electron.leechFile(magnetLink);
++    // Use type assertion to match the type defined in global.d.ts
++    const electron = window.electron as typeof window.electron & { leechFile: (magnetLink: string) => void };
++    if (electron && electron.leechFile) {
++      electron.leechFile(magnetLink);
+     } else {
+       console.error('Electron API not available');
+     }
+@@ -332,15 +382,54 @@ export default function DashboardPage() {
+     }
+   }, [isInitialized, isAuthenticated]);
+ 
+-  // Calculate pagination
+-  const totalPages = Math.ceil(results.length / itemsPerPage);
++  // Add handleSortChange function for sorting
++  const handleSortChange = (event: SelectChangeEvent) => {
++    setSortBy(event.target.value);
++  };
++
++  // Add sortFiles function to sort the files based on selected sort option
++  const sortFiles = (filesToSort: SearchResult[]) => {
++    const [field, direction] = sortBy.split('_');
++    
++    return [...filesToSort].sort((a, b) => {
++      let comparison = 0;
++      
++      switch (field) {
++        case 'filename':
++          comparison = a.filename.localeCompare(b.filename);
++          break;
++        case 'timestamp':
++          comparison = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
++          break;
++        case 'owner_username':
++          comparison = a.owner_username.localeCompare(b.owner_username);
++          break;
++        case 'rating':
++          // Use the fileRatings state to sort by rating
++          const ratingA = fileRatings[a.hash] || 0;
++          const ratingB = fileRatings[b.hash] || 0;
++          comparison = ratingA - ratingB;
++          break;
++        default:
++          comparison = 0;
++      }
++      
++      return direction === 'asc' ? comparison : -comparison;
++    });
++  };
++
++  // Calculate pagination with sorted results
++  const sortedResults = sortFiles(results);
++  const totalPages = Math.ceil(sortedResults.length / itemsPerPage);
+   const startIndex = (page - 1) * itemsPerPage;
+   const endIndex = startIndex + itemsPerPage;
+-  const currentPageResults = results.slice(startIndex, endIndex);
++  const currentPageResults = sortedResults.slice(startIndex, endIndex);
+ 
+   const handleRecommendationDownload = (magnetLink: string, filename: string) => {
+-    if (window.electron && window.electron.leechFile) {
+-      window.electron.leechFile(magnetLink);
++    // Use type assertion to match the type defined in global.d.ts
++    const electron = window.electron as typeof window.electron & { leechFile: (magnetLink: string) => void };
++    if (electron && electron.leechFile) {
++      electron.leechFile(magnetLink);
+     } else {
+       console.error('Electron API not available');
+     }
+@@ -414,7 +503,6 @@ export default function DashboardPage() {
+             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+               <Autocomplete
+                 freeSolo
+-                fullWidth
+                 options={suggestions}
+                 inputValue={inputValue}
+                 onInputChange={(event, newInputValue) => {
+@@ -422,230 +510,234 @@ export default function DashboardPage() {
+                   setSearchQuery(newInputValue);
+                   debouncedFetchSuggestions(newInputValue);
+                 }}
+-                onChange={(event, newValue) => {
+-                  if (typeof newValue === 'string') {
+-                    setSearchQuery(newValue);
+-                  } else if (newValue && 'value' in newValue) {
+-                    setSearchQuery(newValue.value);
+-                  }
+-                }}
+                 renderInput={(params) => (
+                   <TextField
+                     {...params}
+-                    fullWidth
+-                    placeholder="Search for files..."
++                    label="Search for files..."
+                     variant="outlined"
++                    fullWidth
++                    size="medium"
+                     InputProps={{
+                       ...params.InputProps,
+-                      endAdornment: (
+-                        <>
+-                          {params.InputProps.endAdornment}
+-                          <InputAdornment position="end">
+-                            <IconButton type="submit" edge="end" sx={{ color: 'inherit' }}>
+-                              <SearchIcon />
+-                            </IconButton>
+-                          </InputAdornment>
+-                        </>
++                      startAdornment: (
++                        <InputAdornment position="start">
++                          <SearchIcon />
++                        </InputAdornment>
+                       ),
+-                      sx: { 
+-                        borderRadius: 2,
+-                        '& .MuiOutlinedInput-notchedOutline': {
+-                          borderColor: theme.palette.mode === 'light' 
+-                            ? 'rgba(0, 0, 0, 0.12)' 
+-                            : 'rgba(255, 255, 255, 0.05)',
+-                        },
+-                      }
+                     }}
+                   />
+                 )}
+-                renderOption={(props, option, state: AutocompleteRenderOptionState) => (
+-                  <Box
+-                    component="li"
+-                    {...props}
+-                    key={option.value}
+-                    sx={{
+-                      '&.MuiAutocomplete-option': {
+-                        display: 'flex',
+-                        alignItems: 'center',
+-                        padding: '8px 16px',
+-                        '&:hover': {
+-                          backgroundColor: theme.palette.action.hover,
+-                        },
+-                      },
+-                    }}
+-                  >
+-                    <SearchIcon 
+-                      key={`search-icon-${option.value}`}
+-                      sx={{ mr: 1, color: 'text.secondary', fontSize: '0.875rem' }} 
+-                    />
+-                    <Typography 
+-                      key={`text-${option.value}`}
+-                      component="span"
+-                    >
+-                      {option.label}
+-                    </Typography>
+-                  </Box>
+-                )}
+               />
+-              <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
++
++              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
++                <Button 
++                  variant="contained" 
++                  type="submit"
++                  size="medium"
++                  sx={{ 
++                    borderRadius: 1,
++                    textTransform: 'none',
++                    fontWeight: 'bold',
++                    px: 3
++                  }}
++                >
++                  Search
++                </Button>
++                
++                {/* Add sort by dropdown */}
++                <FormControl sx={{ minWidth: 200 }}>
++                  <InputLabel id="sort-by-label">Sort By</InputLabel>
++                  <Select
++                    labelId="sort-by-label"
++                    id="sort-by-select"
++                    value={sortBy}
++                    label="Sort By"
++                    onChange={handleSortChange}
++                    size="small"
++                  >
++                    {sortOptions.map((option) => (
++                      <MenuItem key={option.value} value={option.value}>
++                        {option.label}
++                      </MenuItem>
++                    ))}
++                  </Select>
++                </FormControl>
++                
+                 <Button
+                   variant={showAllFiles ? "contained" : "outlined"}
+-                  color="primary"
++                  color={showAllFiles ? "primary" : "inherit"}
++                  size="small"
+                   onClick={toggleShowAllFiles}
+-                  startIcon={showAllFiles ? <CheckCircleIcon /> : <PeopleAltIcon />}
+-                  sx={{ whiteSpace: 'nowrap' }}
++                  sx={{ 
++                    borderRadius: 1, 
++                    textTransform: 'none',
++                    px: 2
++                  }}
+                 >
+-                  {showAllFiles ? "Show Online Only" : "Show All Files"}
++                  {showAllFiles ? "Showing All Files" : "Show Only Online Files"}
+                 </Button>
+               </Box>
+             </Box>
+           </Paper>
+ 
+-          {/* Results */}
+-          <Box sx={{ position: 'relative', minHeight: 200 }}>
+-            <Fade in={loading || filtering}>
+-              <Box sx={{ 
+-                position: 'absolute', 
+-                top: '50%', 
+-                left: '50%', 
+-                transform: 'translate(-50%, -50%)',
+-                display: 'flex',
+-                flexDirection: 'column',
+-                alignItems: 'center',
+-                gap: 2
+-              }}>
+-                <CircularProgress />
+-                {filtering && (
+-                  <Typography variant="body1" color="text.secondary">
+-                    Finding online files...
+-                  </Typography>
+-                )}
+-              </Box>
+-            </Fade>
+-
+-            <Fade in={!loading && !filtering}>
+-              <Box>
+-                <Grid container spacing={3}>
+-                  {currentPageResults.map((result, index) => (
+-                    <Grid item xs={12} sm={6} md={4} key={index}>
+-                      <Card 
+-                        elevation={2}
+-                        sx={{ 
+-                          height: '100%',
+-                          borderRadius: 2,
+-                          transition: 'transform 0.2s, box-shadow 0.2s',
+-                          '&:hover': {
+-                            transform: 'translateY(-4px)',
+-                            boxShadow: 6,
+-                          }
+-                        }}
+-                      >
+-                        <CardContent>
+-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+-                            {getFileIcon(result.filename, result.isDirectory)}
+-                            <Typography variant="h6" noWrap sx={{ ml: 1 }}>
+-                              {result.filename}
+-                            </Typography>
+-                          </Box>
+-
+-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+-                            <Typography 
+-                              variant="body2" 
+-                              color="text.secondary" 
+-                              sx={{ 
+-                                display: 'flex',
+-                                alignItems: 'center',
+-                                gap: 0.5,
+-                              }}
+-                              noWrap
+-                            >
+-                              <strong>Owner:</strong> {result.owner_username}
+-                            </Typography>
+-                          </Box>
++          {/* Results Area */}
++          {loading ? (
++            <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
++              <CircularProgress />
++            </Box>
++          ) : filtering ? (
++            <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
++              <CircularProgress size={24} sx={{ mr: 1 }} />
++              <Typography>Filtering online files...</Typography>
++            </Box>
++          ) : error ? (
++            <Box sx={{ my: 4 }}>
++              <Alert severity="error">{error}</Alert>
++            </Box>
++          ) : currentPageResults.length > 0 ? (
++            <Box sx={{ position: 'relative', minHeight: 200 }}>
++              <Fade in={loading || filtering}>
++                <Box sx={{ 
++                  position: 'absolute', 
++                  top: '50%', 
++                  left: '50%', 
++                  transform: 'translate(-50%, -50%)',
++                  display: 'flex',
++                  flexDirection: 'column',
++                  alignItems: 'center',
++                  gap: 2
++                }}>
++                  <CircularProgress />
++                  {filtering && (
++                    <Typography variant="body1" color="text.secondary">
++                      Finding online files...
++                    </Typography>
++                  )}
++                </Box>
++              </Fade>
++
++              <Fade in={!loading && !filtering}>
++                <Box>
++                  <Grid container spacing={3}>
++                    {currentPageResults.map((result, index) => (
++                      <Grid item xs={12} sm={6} md={4} key={index}>
++                        <Card 
++                          elevation={2}
++                          sx={{ 
++                            height: '100%',
++                            borderRadius: 2,
++                            transition: 'transform 0.2s, box-shadow 0.2s',
++                            '&:hover': {
++                              transform: 'translateY(-4px)',
++                              boxShadow: 6,
++                            }
++                          }}
++                        >
++                          <CardContent>
++                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
++                              {getFileIcon(result.filename, result.isDirectory)}
++                              <Typography variant="h6" noWrap sx={{ ml: 1 }}>
++                                {result.filename}
++                              </Typography>
++                            </Box>
++
++                            <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
++                              <Typography 
++                                variant="body2" 
++                                color="text.secondary" 
++                                sx={{ 
++                                  display: 'flex',
++                                  alignItems: 'center',
++                                  gap: 0.5,
++                                }}
++                                noWrap
++                              >
++                                <strong>Owner:</strong> {result.owner_username}
++                              </Typography>
++                            </Box>
+ 
+-                          <Box sx={{ mb: 2 }}>
+-                            <FileRating fileHash={result.hash} />
+-                          </Box>
++                            <Box sx={{ mb: 2 }}>
++                              <FileRating fileHash={result.hash} size="small" readOnly />
++                            </Box>
+ 
+-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+-                            <Box>
+-                              {result.mimetype && (
++                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
++                              <Box>
++                                {result.mimetype && (
++                                  <Chip 
++                                    label={result.mimetype.split('/')[1]} 
++                                    size="small" 
++                                    color={getMimetypeColor(result.mimetype)}
++                                    sx={{ mr: 1 }}
++                                  />
++                                )}
+                                 <Chip 
+-                                  label={result.mimetype.split('/')[1]} 
++                                  label={formatDate(result.timestamp)} 
+                                   size="small" 
+-                                  color={getMimetypeColor(result.mimetype)}
+-                                  sx={{ mr: 1 }}
+-                                />
+-                              )}
+-                              <Chip 
+-                                label={formatDate(result.timestamp)} 
+-                                size="small" 
+-                                variant="outlined"
+-                                sx={{ mr: 1 }}
+-                              />
+-                              <Tooltip title="Number of peers">
+-                                <Chip
+-                                  icon={<PeopleAltIcon fontSize="small" />}
+-                                  label={sharerCounts[result.hash] || 0}
+-                                  size="small"
+-                                  color="primary"
+                                   variant="outlined"
++                                  sx={{ mr: 1 }}
+                                 />
++                                <Tooltip title="Number of peers">
++                                  <Chip
++                                    icon={<PeopleAltIcon fontSize="small" />}
++                                    label={sharerCounts[result.hash] || 0}
++                                    size="small"
++                                    color="primary"
++                                    variant="outlined"
++                                  />
++                                </Tooltip>
++                              </Box>
++
++                              <Tooltip title={downloadingFiles[result.hash] ? "Download started" : "Download"}>
++                                <span>
++                                  <IconButton 
++                                    size="medium"
++                                    color={downloadingFiles[result.hash] ? "success" : "primary"}
++                                    sx={{ 
++                                      bgcolor: 'action.hover',
++                                      '&:hover': {
++                                        bgcolor: 'action.selected',
++                                      }
++                                    }}
++                                    onClick={() => handleDialogOpen(result.hash, result.filename, result.magnetLink, result)}
++                                    disabled={downloadingFiles[result.hash]}
++                                  >
++                                    {downloadingFiles[result.hash] ? <CheckCircleIcon /> : <FileDownloadIcon />}
++                                  </IconButton>
++                                </span>
+                               </Tooltip>
+                             </Box>
++                          </CardContent>
++                        </Card>
++                      </Grid>
++                    ))}
++                  </Grid>
++
++                  {/* Add pagination controls */}
++                  {sortedResults.length > itemsPerPage && (
++                    <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
++                      <Pagination
++                        count={totalPages}
++                        page={page}
++                        onChange={handlePageChange}
++                        color="primary"
++                        size="large"
++                      />
++                    </Box>
++                  )}
++                </Box>
++              </Fade>
+ 
+-                            <Tooltip title={downloadingFiles[result.hash] ? "Download started" : "Download"}>
+-                              <span>
+-                                <IconButton 
+-                                  size="medium"
+-                                  color={downloadingFiles[result.hash] ? "success" : "primary"}
+-                                  sx={{ 
+-                                    bgcolor: 'action.hover',
+-                                    '&:hover': {
+-                                      bgcolor: 'action.selected',
+-                                    }
+-                                  }}
+-                                  onClick={() => handleDialogOpen(result.hash, result.filename, result.magnetLink, result)}
+-                                  disabled={downloadingFiles[result.hash]}
+-                                >
+-                                  {downloadingFiles[result.hash] ? <CheckCircleIcon /> : <FileDownloadIcon />}
+-                                </IconButton>
+-                              </span>
+-                            </Tooltip>
+-                          </Box>
+-                        </CardContent>
+-                      </Card>
+-                    </Grid>
+-                  ))}
+-                </Grid>
+-
+-                {/* Add pagination controls */}
+-                {results.length > itemsPerPage && (
+-                  <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+-                    <Pagination
+-                      count={totalPages}
+-                      page={page}
+-                      onChange={handlePageChange}
+-                      color="primary"
+-                      size="large"
+-                    />
+-                  </Box>
+-                )}
+-              </Box>
+-            </Fade>
+-
+-            {error && (
+-              <Typography color="error" sx={{ mt: 2, textAlign: 'center' }}>
+-                {error}
+-              </Typography>
+-            )}
+-
+-            {!loading && results.length === 0 && searchQuery && (
+-              <Typography sx={{ mt: 2, textAlign: 'center', color: 'text.secondary' }}>
+-                No results found
+-              </Typography>
+-            )}
+-          </Box>
++              {!loading && sortedResults.length === 0 && searchQuery && (
++                <Typography sx={{ mt: 2, textAlign: 'center', color: 'text.secondary' }}>
++                  No results found
++                </Typography>
++              )}
++            </Box>
++          ) : (
++            <Typography sx={{ mt: 2, textAlign: 'center', color: 'text.secondary' }}>
++              No results found
++            </Typography>
++          )}
+         </Container>
+       </Box>
+       <Snackbar 
+@@ -692,7 +784,7 @@ export default function DashboardPage() {
+                       Rate this file
+                     </Typography>
+                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
+-                      <FileRating fileHash={dialogContent.hash} size="large" />
++                      <FileRating fileHash={dialogContent.hash} size="large" readOnly={false} />
+                     </Box>
+                   </Box>
+ 
+commit 84f72e8c4e896eb9417cdaf3b64809bcde9a5b54
+Author: Mehmet Rüçhan Yavuzdemir <ruchan.yavuzdemir@icloud.com>
+Date:   Sat May 3 17:32:06 2025 +0300
+
+    SPRINT-9: Implement sort-by feature for shared page
+
+diff --git a/client/renderer/pages/shared.tsx b/client/renderer/pages/shared.tsx
+index 9efeeac..03060c3 100644
+--- a/client/renderer/pages/shared.tsx
++++ b/client/renderer/pages/shared.tsx
+@@ -16,6 +16,12 @@ import {
+   Alert,
+   CircularProgress,
+   Pagination,
++  FormControl,
++  InputLabel,
++  Select,
++  MenuItem,
++  SelectChangeEvent,
++  Grid,
+ } from '@mui/material';
+ import Navbar from '../components/Navbar';
+ 
+@@ -27,24 +33,37 @@ interface SharedFile {
+   modifiedTime: Date;
+ }
+ 
++// Define sort options
++interface SortOption {
++  value: string;
++  label: string;
++}
++
++const sortOptions: SortOption[] = [
++  { value: 'name_asc', label: 'Filename (A-Z)' },
++  { value: 'name_desc', label: 'Filename (Z-A)' },
++  { value: 'size_asc', label: 'Size (Smallest first)' },
++  { value: 'size_desc', label: 'Size (Largest first)' },
++  { value: 'modifiedTime_desc', label: 'Modified Date (Newest first)' },
++  { value: 'modifiedTime_asc', label: 'Modified Date (Oldest first)' },
++];
++
+ export default function SharedFilesPage() {
+   const [files, setFiles] = useState<SharedFile[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+   const [page, setPage] = useState(1);
+   const [itemsPerPage] = useState(4);
++  // Add sort state
++  const [sortBy, setSortBy] = useState<string>('modifiedTime_desc');
+ 
+   const fetchSharedFiles = async () => {
+     try {
+       setLoading(true);
+-      const result = await window.electron.ipcRenderer.getSharedFiles();
++      const result = await window.electron.ipcRenderer.invoke('get-shared-files');
+       
+       if (result.success) {
+-        // Sorting files by modification time, newest first
+-        const sortedFiles = result.files.sort((a, b) =>
+-          new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime()
+-        );
+-        setFiles(sortedFiles);
++        setFiles(result.files);
+       } else {
+         setError(result.error || 'Failed to fetch shared files');
+       }
+@@ -59,16 +78,49 @@ export default function SharedFilesPage() {
+     fetchSharedFiles();
+   }, []);
+ 
+-  //handling page changes
++  // Add handleSortChange function for sorting
++  const handleSortChange = (event: SelectChangeEvent) => {
++    setSortBy(event.target.value);
++  };
++
++  // Sort files function
++  const sortFiles = (filesToSort: SharedFile[]) => {
++    const [field, direction] = sortBy.split('_');
++    
++    return [...filesToSort].sort((a, b) => {
++      let comparison = 0;
++      
++      switch (field) {
++        case 'name':
++          comparison = a.name.localeCompare(b.name);
++          break;
++        case 'size':
++          comparison = a.size - b.size;
++          break;
++        case 'modifiedTime':
++          comparison = new Date(a.modifiedTime).getTime() - new Date(b.modifiedTime).getTime();
++          break;
++        default:
++          comparison = 0;
++      }
++      
++      return direction === 'asc' ? comparison : -comparison;
++    });
++  };
++
++  // Handling page changes
+   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => {
+     setPage(value);
+   };
+ 
++  // Sort files first, then paginate
++  const sortedFiles = sortFiles(files);
++  
+   // Calculate pagination
+-  const totalPages = Math.ceil(files.length / itemsPerPage);
++  const totalPages = Math.ceil(sortedFiles.length / itemsPerPage);
+   const startIndex = (page - 1) * itemsPerPage;
+   const endIndex = startIndex + itemsPerPage;
+-  const currentPageFiles = files.slice(startIndex, endIndex);
++  const currentPageFiles = sortedFiles.slice(startIndex, endIndex);
+ 
+   return (
+     <Box sx={{ display: 'flex' }}>
+@@ -97,9 +149,31 @@ export default function SharedFilesPage() {
+           ) : (
+             <Paper sx={{ mt: 3, p: 2 }}>
+               <Box sx={{ mb: 2 }}>
+-                <Typography variant="h6">
+-                  Shared Files ({files.length})
+-                </Typography>
++                <Grid container spacing={2} alignItems="center">
++                  <Grid item xs>
++                    <Typography variant="h6">
++                      Shared Files ({files.length})
++                    </Typography>
++                  </Grid>
++                  <Grid item xs={12} sm={3}>
++                    <FormControl fullWidth size="small">
++                      <InputLabel id="sort-by-label">Sort By</InputLabel>
++                      <Select
++                        labelId="sort-by-label"
++                        id="sort-by-select"
++                        value={sortBy}
++                        label="Sort By"
++                        onChange={handleSortChange}
++                      >
++                        {sortOptions.map((option) => (
++                          <MenuItem key={option.value} value={option.value}>
++                            {option.label}
++                          </MenuItem>
++                        ))}
++                      </Select>
++                    </FormControl>
++                  </Grid>
++                </Grid>
+               </Box>
+ 
+               <List>
+commit 9dc8ccc06c5a4009442deb339118ac5a67f1e9f9
+Author: Mehmet Rüçhan Yavuzdemir <ruchan.yavuzdemir@icloud.com>
+Date:   Sat May 3 17:36:18 2025 +0300
+
+    Modify comparison logic so that files with same ratings give more meaningful ranking
+
+diff --git a/client/renderer/pages/browse.tsx b/client/renderer/pages/browse.tsx
+index 5dbadf7..e24eb9f 100644
+--- a/client/renderer/pages/browse.tsx
++++ b/client/renderer/pages/browse.tsx
+@@ -360,6 +360,7 @@ export default function BrowsePage() {
+   const [sortBy, setSortBy] = useState<string>('timestamp_desc');
+   // Add ratings state
+   const [fileRatings, setFileRatings] = useState<Record<string, number>>({});
++  const [ratingCounts, setRatingCounts] = useState<Record<string, number>>({});
+ 
+   useEffect(() => {
+     if (dialogOpen && dialogContent) {
+@@ -453,6 +454,7 @@ export default function BrowsePage() {
+   // Fetch ratings for files
+   const fetchFileRatings = async (files: File[]) => {
+     const ratings: Record<string, number> = {};
++    const counts: Record<string, number> = {};
+     try {
+       await Promise.all(
+         files.map(async (file) => {
+@@ -461,11 +463,13 @@ export default function BrowsePage() {
+             if (response.ok) {
+               const data = await response.json();
+               ratings[file.hash] = data.average || 0;
++              counts[file.hash] = data.count || 0;
+             }
+           }
+         })
+       );
+       setFileRatings(ratings);
++      setRatingCounts(counts);
+     } catch (error) {
+       console.error('Error fetching file ratings:', error);
+     }
+@@ -593,6 +597,14 @@ export default function BrowsePage() {
+           // Use the fileRatings state to sort by rating
+           const ratingA = fileRatings[a.hash] || 0;
+           const ratingB = fileRatings[b.hash] || 0;
++          
++          if (ratingA === ratingB) {
++            // If ratings are the same, sort by number of ratings (review count)
++            const countA = ratingCounts[a.hash] || 0;
++            const countB = ratingCounts[b.hash] || 0;
++            return direction === 'asc' ? countA - countB : countB - countA;
++          }
++          
+           comparison = ratingA - ratingB;
+           break;
+         default:
+diff --git a/client/renderer/pages/dashboard.tsx b/client/renderer/pages/dashboard.tsx
+index 9222181..ef99005 100644
+--- a/client/renderer/pages/dashboard.tsx
++++ b/client/renderer/pages/dashboard.tsx
+@@ -116,6 +116,7 @@ export default function DashboardPage() {
+   const [sortBy, setSortBy] = useState<string>('timestamp_desc');
+   // Add ratings state
+   const [fileRatings, setFileRatings] = useState<Record<string, number>>({});
++  const [ratingCounts, setRatingCounts] = useState<Record<string, number>>({});
+ 
+   useEffect(() => {
+     if (dialogOpen && dialogContent) {
+@@ -245,6 +246,7 @@ export default function DashboardPage() {
+ 
+   const fetchFileRatings = async (files: SearchResult[]) => {
+     const ratings: Record<string, number> = {};
++    const counts: Record<string, number> = {};
+     try {
+       await Promise.all(
+         files.map(async (file) => {
+@@ -253,11 +255,13 @@ export default function DashboardPage() {
+             if (response.ok) {
+               const data = await response.json();
+               ratings[file.hash] = data.average || 0;
++              counts[file.hash] = data.count || 0;
+             }
+           }
+         })
+       );
+       setFileRatings(ratings);
++      setRatingCounts(counts);
+     } catch (error) {
+       console.error('Error fetching file ratings:', error);
+     }
+@@ -408,6 +412,14 @@ export default function DashboardPage() {
+           // Use the fileRatings state to sort by rating
+           const ratingA = fileRatings[a.hash] || 0;
+           const ratingB = fileRatings[b.hash] || 0;
++          
++          if (ratingA === ratingB) {
++            // If ratings are the same, sort by number of ratings (review count)
++            const countA = ratingCounts[a.hash] || 0;
++            const countB = ratingCounts[b.hash] || 0;
++            return direction === 'asc' ? countA - countB : countB - countA;
++          }
++          
+           comparison = ratingA - ratingB;
+           break;
+         default:
+commit 9e09a52b964869725c88f667f6728932e5b3f64b
+Author: Mehmet Rüçhan Yavuzdemir <ruchan.yavuzdemir@icloud.com>
+Date:   Sat May 3 22:32:15 2025 +0300
+
+    SPRINT-9: Improve file view and download UX
+
+diff --git a/client/renderer/pages/dashboard.tsx b/client/renderer/pages/dashboard.tsx
+index ef99005..1bc89c5 100644
+--- a/client/renderer/pages/dashboard.tsx
++++ b/client/renderer/pages/dashboard.tsx
+@@ -642,8 +642,10 @@ export default function DashboardPage() {
+                             '&:hover': {
+                               transform: 'translateY(-4px)',
+                               boxShadow: 6,
+-                            }
++                            },
++                            cursor: 'pointer'
+                           }}
++                          onClick={() => handleDialogOpen(result.hash, result.filename, result.magnetLink, result)}
+                         >
+                           <CardContent>
+                             <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+@@ -710,7 +712,10 @@ export default function DashboardPage() {
+                                         bgcolor: 'action.selected',
+                                       }
+                                     }}
+-                                    onClick={() => handleDialogOpen(result.hash, result.filename, result.magnetLink, result)}
++                                    onClick={(e) => {
++                                      e.stopPropagation();
++                                      handleDownload(result.hash, result.filename, result.magnetLink);
++                                    }}
+                                     disabled={downloadingFiles[result.hash]}
+                                   >
+                                     {downloadingFiles[result.hash] ? <CheckCircleIcon /> : <FileDownloadIcon />}

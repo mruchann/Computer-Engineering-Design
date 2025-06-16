@@ -56,7 +56,7 @@ const TorrentSearch = () => {
                 <td>{torrent.upload_date || "N/A"}</td>
                 <td>
                   <a
-                    href={torrent.magnet_link}
+                    href={torrent.magnetLink}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
